@@ -65,21 +65,23 @@ class TestResult:
         return cls(lst[0], lst[1], lst[2], lst[3], lst[4], lst[5], lst[6])
 
 
+def f(solver, data_dir, show_z3):
+    if solver == "Z3" and not show_z3:
+        return None, None
+
+    d = np.load(f'{data_dir}/{solver}.npy')
+    x = np.linspace(0.0, 100.0, num=d.size, endpoint=True)
+    d = np.percentile(d, x)
+
+    # plt.plot(x, d, label=solver)
+    return x, d
+
 def show_graph(data_dir='data/np-comp-check', show_z3=False, log=True):
-    compare_to_z3 = {}
-
-    # # load np arrays
-    for solver in solvers:
-        if solver == "Z3" and not show_z3:
-            continue
-        compare_to_z3[solver] = np.load(f'{data_dir}/{solver}.npy')
-
-        d = compare_to_z3[solver]
-        x = np.linspace(0.0, 100.0, num=d.size, endpoint=True)
-        d = np.percentile(d, x)
-
-        plt.plot(x, d, label=solver)
-
+    with Pool() as pool:
+        xd = pool.starmap(f, zip(solvers, repeat(data_dir), repeat(show_z3)))
+        for (x, d), solver in zip(xd, solvers):
+            if x is not None:
+                plt.plot(x, d, label=solver)
     if log:
         plt.yscale('log', base=2)
     # plt.xscale('log')
@@ -155,9 +157,9 @@ def save_np_array(solver, out_dir, f=lambda x: x.get_average_time()):
     print(f'Saved {solver}')
 
 
-def print_percentes(dir, skip_z3=True):
+def print_percentes(dir, show_z3=False):
     for solver in solvers:
-        if solver == "Z3" and skip_z3:
+        if solver == "Z3" and not show_z3:
             continue
         d = np.load(f'{dir}/{solver}.npy')
 
@@ -184,14 +186,20 @@ if __name__ == '__main__':
     # with Pool() as pool:
     #     result = pool.map(create_and_save_dict, solvers)
 
+    print('Creating Z3 dict')
+
     z3_dict = load_dict('Z3')
     path = 'data/np-comp-check'
     os.makedirs(path, exist_ok=True)
-    with Pool() as pool:
-        pool.map(save_comp_to_z3, zip(solvers, repeat(z3_dict), repeat(path)))
+    print('start save to np')
 
+    with Pool() as pool:
+        pool.starmap(save_comp_to_z3, zip(solvers, repeat(z3_dict), repeat(path)))
+
+    print('start show graph')
     show_graph(path, show_z3=False, log=True)
 
-    print_percentes(path, skip_z3=False)
+    print('start print percentiles')
+    print_percentes(path, show_z3=False)
 
     pass
