@@ -1,4 +1,5 @@
 import os
+from statistics import variance, mean
 
 import pandas as pd
 from matplotlib import mlab
@@ -137,53 +138,76 @@ def show_graph(dirname: str):
 
 def read_and_save(filename: str):
     global data, test_results, results, test_name, solver, compare_to_z3, res
-    data = pd.read_csv(f"{filename}.csv")
-    # dict of test_name -> list of (solver_name, time, result)
+    datas = [pd.read_csv(f"{filename}0.csv"), pd.read_csv(f"{filename}1.csv"), pd.read_csv(f"{filename}2.csv")]
+    # [dict of test_name -> (dict solver_name -> TestResult(solver_name, time, result))]
+    results = [get_results_dict(data) for data in datas]
+    compare_to_z3 = {}
+    for solver in solvers:
+        compare_to_z3[solver] = {}
+        for i in range(3):
+            compare_to_z3[solver][i] = np.array([])
+
+    # calculate relative difference with Z3 for every test
+    # for i, ith_results in enumerate(results):
+    for test_name, test_results in results[0].items():
+        for test_results in results:
+            if test_name not in test_results:
+                continue
+
+
+        z3_res: TestResult = test_results['Z3']
+
+        if z3_res.result != "passed":
+            continue
+        for solver, res in test_results.items():
+            if res.result != "passed":
+                continue
+            compare_to_z3[res.solver][i] = np.append(compare_to_z3[res.solver][i], res.time / z3_res.time)
+
+
+    for solver in solvers:
+        # filter if not all tests are successful or difference is too large
+
+        # [np array]
+        results = compare_to_z3[solver]
+        if len(results) != 3:
+            print(f"Skipping {solver} because not all tests are successful")
+            continue
+        # filter large variance
+        if variance(results) > 0.25:
+            print(f"Skipping {solver} because variance is too large")
+            continue
+
+        # compare_to_z3[i][solver].sort()
+        os.makedirs(f'np-comp/{filename}', exist_ok=True)
+        np.save(f'np-comp/{filename}/{solver}', mean(compare_to_z3[solver]))
+
+
+def get_results_dict(data: pd.DataFrame) -> dict[str, dict[str, TestResult]]:
     results = {}
+    global test_name, solver
     for row in data.itertuples(index=False):
         test_name = row[0]
         results.setdefault(test_name, dict())
         solver = row[1]
         results[test_name][solver] = TestResult.from_list(row[1:])
-    compare_to_z3 = {}
-    for solver in solvers:
-        compare_to_z3[solver] = np.array([])
-    # calculate relative difference with Z3 for every test
-    for test_name, results in results.items():
-        z3_res: TestResult = results['Z3']
-
-        if z3_res.result != "passed":
-            continue
-        for solver, res in results.items():
-            if res.result != "passed":
-                continue
-            compare_to_z3[res.solver] = np.append(compare_to_z3[res.solver], res.time / z3_res.time)
-    for solver in solvers:
-        compare_to_z3[solver].sort()
-        os.makedirs(f'np-comp/{filename}', exist_ok=True)
-        np.save(f'np-comp/{filename}/{solver}', compare_to_z3[solver])
+    return results
 
 
 if __name__ == '__main__':
     filenames = [
         # "data/merged/data0", "data/merged/data1", "data/merged/data2",
-        "data/all/data0", "data/all/data1", "data/all/data2",
+        # "data/all/data0", "data/all/data1", "data/all/data2",
+        "data/all/data",
         # "data/no-bv-opt/data0", "data/no-bv-opt/data1","data/no-bv-opt/data2"
     ]
     # if running several times comment this line:
-    for filename in filenames:
-        # html_to_csv(filename)
-        # read_and_save(filename)
-
-        # compare_to_z3 = {}
-        # # # load np arrays
-        # for solver in solvers:
-        #     path = f'np-comp/{solver}.npy'
-        #     compare_to_z3[solver] = np.load(path)
-        #     print(
-        #         f"{solver} {compare_to_z3[solver].size} {compare_to_z3[solver].min()} {compare_to_z3[solver].max()} {compare_to_z3[solver].mean()} tail: {compare_to_z3[solver][-5:]}")
-
-        show_graph(filename)
+    # for filename in filenames:
+    #     # html_to_csv(filename)
+    #     read_and_save(filename)
+    #     show_graph(filename)
+    read_and_save(filenames[0])
+    show_graph(filenames[0])
 
     # html_to_csv()
     # read_and_save()
