@@ -4,6 +4,7 @@ import pickle
 import shutil
 from multiprocessing import Pool
 from statistics import variance, mean
+from typing import Dict, Any
 
 import pandas as pd
 from matplotlib import mlab
@@ -89,7 +90,12 @@ class TestResult:
         # mean of not unknown status
         if self.all_unknown():
             return None
-        return mean(self.array_without_unknowns(self.time))
+        return mean(self.array_without_unknowns(self.check_time))
+
+    def get_max_time(self):
+        if self.all_unknown():
+            return None
+        return max(self.array_without_unknowns(self.time))
 
     def get_variance_time(self):
         if self.all_unknown():
@@ -109,7 +115,7 @@ def show_graph():
     for solver in solvers:
         if solver == "Z3":
             continue
-        path = f'data/np-comp/{solver}.npy'
+        path = f'data/np-comp-check/{solver}.npy'
         compare_to_z3[solver] = np.load(path)
 
         # skip z3_dict, bitwuzla
@@ -121,7 +127,7 @@ def show_graph():
 
         plt.plot(x, d, label=solver)
 
-    plt.yscale('log')
+    plt.yscale('log', base=2)
     # plt.xscale('log')
     plt.grid()
     plt.legend()
@@ -132,12 +138,12 @@ def show_graph():
     plt.show()
 
 
-def load_dict(solver: str):
+def load_dict(solver: str) -> dict[str, TestResult]:
     with open(f'data/dicts/{solver}.pkl', 'rb') as f:
         return pickle.load(f)
 
 
-def get_dict(solver: str):
+def create_and_save_dict(solver: str):
     file = f'data/{solver}.csv'
     df = pd.read_csv(file, index_col=False)
 
@@ -180,7 +186,7 @@ def save_comp_to_z3(solver):
         a = results.get_average_time()
         z3 = z3_results.get_average_time()
         compare_to_z3.append(a / z3)
-        np.save(f'data/np-comp/{solver}.npy', np.asarray(compare_to_z3))
+    np.save(f'data/np-comp-check/{solver}.npy', np.sort(np.asarray(compare_to_z3)))
     print(f'Saved {solver}')
 
 
@@ -190,76 +196,55 @@ if __name__ == '__main__':
     files = [f'data/{solver}.csv' for solver in solvers]
     header = ['sample name', 'theory', 'solver', 'assert time', 'check time', 'time', 'status']
 
-    # print(files)
+    # to merge all csv files
     # with open('data/all.csv', 'wb') as wfd:
     #     for f in files:
     #         with open(f, 'rb') as fd:
     #             shutil.copyfileobj(fd, wfd)
 
+    # to add header and change sep in all csv files
     # for solver in solvers:
-    #     f = f'data/{solver}.csv'
-    #     print(f)
-    #     df = pd.read_csv(f, header=None, sep=' \| ', index_col=False, skipinitialspace=True)
-    #     df.to_csv(f'data/{solver}.csv', index=False, header=header)
+    # solver = 'Bitwuzla'
+    # f = f'data/{solver}.csv'
+    # print(f)
+    # df = pd.read_csv(f, header=None, sep=' \| ', index_col=False, skipinitialspace=True)
+    # df.to_csv(f'data/{solver}.csv', index=False, header=header)
 
-    # for file in files:
-    # file = 'data/Z3.csv'
-    # print(file)
-    # get_dict()
-    # for key, value in d.items():
-    #     print(key, value)
-    #     break
 
+    # to create dict for each solver
     # with Pool() as pool:
-    #     result = pool.map(get_dict, solvers)
-    test_name = 'QF_FP_sqrt-has-no-other-solution-18743.smt2'
+    #     result = pool.map(create_and_save_dict, solvers)
+    # create_and_save_dict('Bitwuzla')
+    # test_name = 'QF_FP_sqrt-has-no-other-solution-18743.smt2'
 
 
-
-    #     test_results = {}
-    # for index, row in df.iterrows():
-    #     test_result = TestResult.from_list(row.tolist())
-    #     if test_result.sample_name not in test_results:
-    #         test_results[test_result.sample_name] = []
-    #     test_results[test_result.sample_name].append(test_result)
-
-    # df = pd.read_csv('data/all.csv', index_col=False)
-    # # create dict: solver -> test_name -> [TestResults]
-    #
-    #
-    # print(df[df['sample name'] == test_name])
-    #
-    # print("dict:")
-    # d = df.set_index('sample name').T.to_dict('list')
-    # for key, value in d.items():
-    #     print(key, value)
-    #     break
-    # print(d[test_name])
-
-    dicts = {}
-    for solver in solvers:
-        d = load_dict(solver)
-        dicts[solver] = d
+    # dicts: dict[str, dict[str, TestResult]] = {} # solver -> dict of test_name -> TestResult
+    # for solver in solvers:
+    #     d = load_dict(solver)
+    #     dicts[solver] = d
 
     # z3_dict = dicts['Z3']
+    path = 'data/np-comp-check'
+    os.makedirs(path, exist_ok=True)
+    with Pool() as pool:
+        pool.map(save_comp_to_z3, solvers)
+    # save_comp_to_z3('Bitwuzla')
+    show_graph()
 
-    # os.makedirs('data/np-comp', exist_ok=True)
-    # with Pool() as pool:
-    #     pool.map(save_comp_to_z3, solvers)
+    for solver in solvers:
+        if solver == "Z3":
+            continue
+        path = f'{path}/{solver}.npy'
+        d = np.load(path)
 
-    # show_graph()
-
-    # for solver in solvers:
-    #     if solver == "Z3":
-    #         continue
-    #     path = f'data/np-comp/{solver}.npy'
-    #     d = np.load(path)
-    #
-    #     print(f'{solver} size: {d.size}')
-    #     print(f'    25: {np.percentile(d, 25)}')
-    #     print(f'    50: {np.percentile(d, 50)}')
-    #     print(f'    90: {np.percentile(d, 90)}')
-    #     print(f'    95: {np.percentile(d, 95)}')
+        print(f'{solver} size: {d.size}')
+        print(f'    0: {np.percentile(d, 0)}')
+        print(f'    15: {np.percentile(d, 15)}')
+        print(f'    25: {np.percentile(d, 25)}')
+        print(f'    50: {np.percentile(d, 50)}')
+        print(f'    90: {np.percentile(d, 90)}')
+        print(f'    95: {np.percentile(d, 95)}')
+        print(f'    100: {np.percentile(d, 100)}')
 
 
         # skip z3_dict, bitwuzla
