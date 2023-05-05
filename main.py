@@ -85,6 +85,7 @@ def show_graph(data_dir='data/np-comp-check', show_z3=False, log=True):
         for (x, d), solver in zip(xd, solvers):
             if x is not None:
                 plt.plot(x, d, label=solver)
+    plt.axhline(y=1, label='Z3', color='purple')
     if log:
         plt.yscale('log', base=2)
     # plt.xscale('log')
@@ -203,8 +204,8 @@ if __name__ == '__main__':
     path = 'data/np-comp-check'
     os.makedirs(path, exist_ok=True)
     # print('start save to np')
-    with Pool() as pool:
-        pool.starmap(save_comp_to_z3, zip(solvers, repeat(z3_dict), repeat(path)))
+    # with Pool() as pool:
+    #     pool.starmap(save_comp_to_z3, zip(solvers, repeat(z3_dict), repeat(path)))
 
     # print('start show graph')
     show_graph(path, show_z3=False, log=True)
