@@ -78,10 +78,9 @@ def f(solver, data_dir, show_z3):
     # plt.plot(x, d, label=solver)
     return x, d
 
-
-def show_graph(data_dir='data/np-comp-check', show_z3=False, log=True):
+def show_graph(data_dir='data/np-comp-check', log=True):
     with Pool() as p:
-        xd = p.starmap(f, zip(solvers, repeat(data_dir), repeat(show_z3)))
+        xd = p.starmap(f, zip(solvers, repeat(data_dir), repeat(False)))
         for (x, d), solver in zip(xd, solvers):
             if x is not None:
                 plt.plot(x, d, label=solver)
@@ -95,6 +94,40 @@ def show_graph(data_dir='data/np-comp-check', show_z3=False, log=True):
     plt.xlabel("Percentile")
     plt.title("Relative time to Z3")
     plt.savefig('compare.png')
+    plt.show()
+
+def show_graph_for_theory(data_dir='data/np-comp-check', log=True, theory=""):
+    with Pool() as p:
+        xd = p.starmap(f, zip(solvers, repeat(f'{data_dir}/{theory}'), repeat(False)))
+        for (x, d), solver in zip(xd, solvers):
+            if x is not None:
+                plt.plot(x, d, label=solver)
+    plt.axhline(y=1, label='Z3', color='purple')
+    if log:
+        plt.yscale('log', base=2)
+    # plt.xscale('log')
+    plt.grid()
+    plt.legend()
+    plt.ylabel("Relative time")
+    plt.xlabel("Percentile")
+    plt.title(f"{theory}: Relative time to Z3")
+    plt.savefig(f'{theory}-compare.png')
+    plt.show()
+
+
+def show_one_graph(solver, data_dir='data/np-comp-check', log=True):
+    x, d = f(solver, data_dir, False)
+    plt.plot(x, d, label=solver)
+    plt.axhline(y=1, label='Z3', color='purple')
+    if log:
+        plt.yscale('log', base=2)
+    # plt.xscale('log')
+    plt.grid()
+    plt.legend()
+    plt.ylabel("Relative time")
+    plt.xlabel("Percentile")
+    plt.title(f"Relative time: {solver} to Z3")
+    plt.savefig(f'compare-{solver}.png')
     plt.show()
 
 
@@ -136,7 +169,8 @@ def create_and_save_dict(solver: str):
     return res
 
 
-def save_comp_to_z3(solver: str, z3_dict_to_comp: dict[str, TestResult], out_dir: str = 'data/np-comp-check'):
+def save_comp_to_z3(solver: str, z3_dict_to_comp: dict[str, TestResult], theory=None,
+                    out_dir: str = 'data/np-comp-check'):
     if solver == 'Z3':
         return
     print(f'Computing {solver}')
@@ -144,14 +178,20 @@ def save_comp_to_z3(solver: str, z3_dict_to_comp: dict[str, TestResult], out_dir
     d: dict[str, TestResult] = load_dict(solver)
     print(f'Loaded {solver}')
     for sample, results in d.items():
+        if theory is not None and results.theory != theory:
+            continue
         if sample not in z3_dict_to_comp:
             continue
+
         z3_results = z3_dict_to_comp[sample]
         if results.all_unknown() or z3_results.all_unknown():
             continue
         a = results.get_average_time()
         z3 = z3_results.get_average_time()
         compare_to_z3.append(a / z3)
+    if theory is not None:
+        out_dir = f'{out_dir}/{theory}'
+        os.makedirs(out_dir, exist_ok=True)
     np.save(f'{out_dir}/{solver}.npy', np.sort(np.asarray(compare_to_z3)))
     print(f'Saved {solver}')
 
@@ -192,7 +232,6 @@ if __name__ == '__main__':
     #     df = pd.read_csv(f, index_col=False)
     #     df.loc[df["sample name"] != 'sample name'].to_csv(f'data/{solver}.csv', index=False, header=header)
 
-
     # to create dict for each solver
     # with Pool() as pool:
     #     result = pool.map(create_and_save_dict, solvers)
@@ -204,11 +243,16 @@ if __name__ == '__main__':
     path = 'data/np-comp-check'
     os.makedirs(path, exist_ok=True)
     # print('start save to np')
-    # with Pool() as pool:
-    #     pool.starmap(save_comp_to_z3, zip(solvers, repeat(z3_dict), repeat(path)))
+    theories = ['QF_FP', 'QF_BVFP', 'QF_ABVFP']
+    # for theory in theories:
+    #     with Pool() as pool:
+    #         pool.starmap(save_comp_to_z3, zip(solvers, repeat(z3_dict), repeat(theory), repeat(path)))
+    #     show_graph_for_theory(path, log=True, theory=theory)
 
     # print('start show graph')
-    show_graph(path, show_z3=False, log=True)
+    # show_graph(path, log=True)
+    # for solver in solvers_no_z3:
+    #     show_one_graph(solver, path, log=True)
 
     # print('start print percentiles')
     # print_percentes(path, show_z3=False)
@@ -219,4 +263,40 @@ if __name__ == '__main__':
     #     print(results)
     #     break
 
+    # count sat/unsat/unknown
+    print("{:<15} {:<10} {:<10} {:<10}".format('solver', 'SAT', 'UNSAT', 'UNKNOWN'))
+
+    all_cnts = {}  # solver -> theory -> status -> cnt
+    for solver in solvers:
+        d = load_dict(solver)
+        cnts = {}
+        for theory in theories:
+            cnts[theory] = {'SAT': 0, 'UNSAT': 0, 'UNKNOWN': 0}
+        cnts['all'] = {'SAT': 0, 'UNSAT': 0, 'UNKNOWN': 0}
+
+        for res in d.values():
+            for status in res.status:
+                cnts[res.theory][status] += 1
+                cnts['all'][status] += 1
+
+        all_cnts[solver] = cnts
+
+
+    #  theory -> solver -> status -> cnt
+    transformed = {}
+    os.makedirs('tables', exist_ok=True)
+    for theory in theories + ['all']:
+        transformed[theory] = {}
+        for solver in solvers:
+            transformed[theory][solver] = {}
+            for status in ['SAT', 'UNSAT', 'UNKNOWN']:
+                transformed[theory][solver][status] = all_cnts[solver][theory][status]
+        print(theory)
+        for solver in solvers:
+            cnts = transformed[theory][solver]
+            print("{:<15} {:<10} {:<10} {:<10}".
+                  format(solver, cnts['SAT'], cnts['UNSAT'], cnts['UNKNOWN']))
+        print()
+
+        # pd.DataFrame(transformed[theory]).to_csv(f'tables/out-{theory}.csv')
     pass
